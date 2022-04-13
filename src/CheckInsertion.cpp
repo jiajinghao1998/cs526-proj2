@@ -21,11 +21,11 @@
 
 #define DEBUG_TYPE "kint"
 #include <iostream>
-#include "llvm/Transforms/Scalar.h"
 #include "llvm/IR/DerivedTypes.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/LLVMContext.h"
+#include "llvm/IR/Module.h"
 #include "llvm/Pass.h"
 #include "llvm/Transforms/Utils/PromoteMemToReg.h"
 #include "llvm/Support/Debug.h"
@@ -50,16 +50,17 @@ struct CheckInsertion : public FunctionPass {
   }
 
 private:
-    // Add fields and helper functions for this pass here.
+  // Add fields and helper functions for this pass here.
+  void insertCheck(BinaryOperator *I);
 };
 
 } // End anonymous namespace
 
 char CheckInsertion::ID = 0;
 static RegisterPass<CheckInsertion> X("kint-check-insertion",
-			    "BoundsCheckInsertion pass for Kint",
-			    false /* does not modify the CFG */,
-			    false /* transformation, not just analysis */);
+          "BoundsCheckInsertion pass for Kint",
+          false /* does not modify the CFG */,
+          false /* transformation, not just analysis */);
 
 
 // Public interface to create the ScalarReplAggregates pass.
@@ -82,7 +83,12 @@ bool CheckInsertion::runOnFunction(Function &F) {
 
   for (auto &BB: F) {
     for (auto &I: BB) {
-     errs() << I << "\n"; 
+      auto *BO = dyn_cast<BinaryOperator>(&I);
+      if (!BO)
+        continue;
+      
+      Changed = true;
+      insertCheck(BO);
     }
   }
 
@@ -90,6 +96,22 @@ bool CheckInsertion::runOnFunction(Function &F) {
 
 }
 
+void CheckInsertion::insertCheck(BinaryOperator *I) {
+  auto *M = I->getParent()->getParent()->getParent();
+  auto &C = M->getContext();
+
+  auto *Op1 = I->getOperand(0);
+  auto *Op2 = I->getOperand(1);
+
+  Type *ArgTys[3] = { Type::getInt8Ty(C), Op1->getType(), Op2->getType()};
+  auto *FnTy = FunctionType::get(Type::getVoidTy(C), ArgTys, false);
+  auto F = M->getOrInsertFunction("kint_bug_on", FnTy);
+
+  auto *BOp = Constant::getIntegerValue(Type::getInt8Ty(C), APInt(8, I->getOpcode()));
+
+  Value *Args[3] = { BOp, Op1, Op2 };
+  CallInst::Create(F, Args, "", I);
+}
 
 
 

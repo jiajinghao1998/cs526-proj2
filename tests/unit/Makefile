@@ -40,7 +40,7 @@ test: $(TARGET).test.bc
 
 %.debug.bc: %.llvm.bc
 	$(LLVMOPT) $(DEBUGOPTS) < $< | \
-	$(LLVMOPT) -load $(SROALIB) -kint-check-insertion -enable-new-pm=0 -o=$@
+	$(LLVMOPT) -load $(SROALIB) -kint-check-insertion -verify -enable-new-pm=0 -o=$@
 
 clean:
 	$(RM) -f *.debug.bc *.test.bc *.llvm.bc *.ll

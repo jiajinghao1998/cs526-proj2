@@ -10,6 +10,10 @@ int main(int argc, char* argv[])
 {
   int i1 = atoi(argv[1]);
   int i2 = atoi(argv[2]);
-  
+
+  long l1 = i1;
+  long l2 = i2;
+  volatile long l3 = l1 + l2;
+
   return i1 + i2;
 }
