@@ -30,6 +30,9 @@
 #include "llvm/Transforms/Utils/PromoteMemToReg.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/ADT/Statistic.h"
+#include "llvm/ADT/SmallVector.h"
+#include "llvm/ADT/SmallPtrSet.h"
+#include "llvm/Analysis/ValueTracking.h"
 using namespace llvm;
 
 STATISTIC(NumInserted,  "Number of bounds check inserted");
@@ -52,6 +55,7 @@ struct CheckInsertion : public FunctionPass {
 private:
   // Add fields and helper functions for this pass here.
   void insertCheck(BinaryOperator *I);
+  bool isObservable(Instruction *I);
 };
 
 } // End anonymous namespace
@@ -84,7 +88,7 @@ bool CheckInsertion::runOnFunction(Function &F) {
   for (auto &BB: F) {
     for (auto &I: BB) {
       auto *BO = dyn_cast<BinaryOperator>(&I);
-      if (!BO)
+      if (!BO || !isObservable(BO))
         continue;
       
       Changed = true;
@@ -113,6 +117,26 @@ void CheckInsertion::insertCheck(BinaryOperator *I) {
   CallInst::Create(F, Args, "", I);
 }
 
+bool CheckInsertion::isObservable(Instruction *I) {
+  SmallVector<Instruction *, 16> insts;
+  SmallPtrSet<Value *, 16> visited;
+
+  insts.push_back(I);
+  while (!insts.empty()) {
+    auto *curr = insts.back();
+    insts.pop_back();
+    visited.insert(curr);
+    
+    if (isSafeToSpeculativelyExecute(curr))
+      return true;
+
+    for (auto *U: curr->users()) {
+      if (!visited.contains(U))
+        insts.push_back(cast<Instruction>(U));
+    }
+  }
+  return false;
+}
 
 
 

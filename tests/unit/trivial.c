@@ -13,7 +13,7 @@ int main(int argc, char* argv[])
 
   long l1 = i1;
   long l2 = i2;
-  volatile long l3 = l1 + l2;
+  long l3 = l1 + l2;
 
   return i1 + i2;
 }

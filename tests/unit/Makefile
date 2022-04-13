@@ -16,7 +16,7 @@ LLVMOPT = $(LLVMROOT)/bin/opt
 
 ## Other choices: test or comparecfe (these will be provided later)
 default: debug
-DEBUGOPTS =  -verify -inline -mem2reg -simplifycfg -mem2reg -globalopt -globaldce -instcombine -adce -instcombine -simplifycfg -sroa
+DEBUGOPTS =  -verify -inline -mem2reg -simplifycfg -mem2reg -globalopt -globaldce -instcombine -adce -instcombine -simplifycfg -mem2reg
 
 testsimple: debug
 debug: $(TARGET).debug.bc
@@ -39,7 +39,7 @@ test: $(TARGET).test.bc
 	$(LLVMGCC) -S -emit-llvm -o - $< | $(LLVMAS) -o=$@
 
 %.debug.bc: %.llvm.bc
-	$(LLVMOPT) $(DEBUGOPTS) < $< | \
+	$(LLVMOPT) $(DEBUGOPTS) -enable-new-pm=0 < $< | \
 	$(LLVMOPT) -load $(SROALIB) -kint-check-insertion -verify -enable-new-pm=0 -o=$@
 
 clean:
