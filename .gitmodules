@@ -1,0 +1,3 @@
+[submodule "tests/mold"]
+	path = tests/mold
+	url = git@github.com:rui314/mold.git
