@@ -26,6 +26,7 @@
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
+#include "llvm/IR/GetElementPtrTypeIterator.h"
 #include "llvm/Pass.h"
 #include "llvm/Transforms/Utils/PromoteMemToReg.h"
 #include "llvm/Support/Debug.h"
@@ -38,7 +39,7 @@ using namespace llvm;
 STATISTIC(NumInserted,  "Number of bounds check inserted");
 
 namespace { // Begin anonymous namespace
-  
+
 struct CheckInsertion : public FunctionPass {
   static char ID; // Pass identification
   CheckInsertion() : FunctionPass(ID) { }
@@ -69,7 +70,7 @@ static RegisterPass<CheckInsertion> X("kint-check-insertion",
 
 // Public interface to create the ScalarReplAggregates pass.
 // This function is provided to you.
-FunctionPass *createMyScalarReplAggregatesPass() { 
+FunctionPass *createMyScalarReplAggregatesPass() {
   return new CheckInsertion();
 }
 
@@ -90,14 +91,13 @@ bool CheckInsertion::runOnFunction(Function &F) {
       auto *BO = dyn_cast<BinaryOperator>(&I);
       if (!BO || !isObservable(BO))
         continue;
-      
+
       Changed = true;
       insertCheck(BO);
     }
   }
 
   return Changed;
-
 }
 
 void CheckInsertion::insertCheck(BinaryOperator *I) {
@@ -126,7 +126,7 @@ bool CheckInsertion::isObservable(Instruction *I) {
     auto *curr = insts.back();
     insts.pop_back();
     visited.insert(curr);
-    
+
     if (isSafeToSpeculativelyExecute(curr))
       return true;
 
@@ -137,31 +137,3 @@ bool CheckInsertion::isObservable(Instruction *I) {
   }
   return false;
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
