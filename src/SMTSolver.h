@@ -1,4 +1,6 @@
-#include "boolector.h"
+#include <llvm/ADT/APInt.h>
+#include <llvm/ADT/SmallString.h>
+#include <boolector.h>
 
 typedef BoolectorNode *SMTExpr;
 
@@ -11,6 +13,12 @@ public:
   {
     boolector_delete(btor);
   }
+
+  // don't allow copy/move
+  SMTSolver(const SMTSolver &) = delete;
+  SMTSolver(SMTSolver &&) = delete;
+  SMTSolver &operator=(const SMTSolver &) = delete;
+  SMTSolver &operator=(SMTSolver &&) = delete;
 
   SMTExpr smt_true()
   {
@@ -142,6 +150,11 @@ public:
     return boolector_get_width(btor, e);
   }
 
+  SMTExpr smt_uext(SMTExpr e, uint32_t width)
+  {
+    boolector_uext(btor, e, width);
+  }
+
   SMTExpr smt_sext(SMTExpr e, uint32_t width)
   {
     return boolector_sext(btor, e, width);
@@ -166,6 +179,24 @@ public:
     auto result = boolector_consth(btor, bvsort, str.c_str());
     boolector_release_sort(btor, bvsort);
     return result;
+  }
+
+  SMTExpr smt_cond(SMTExpr cond, SMTExpr then, SMTExpr else)
+  {
+    return solver.boolector_cond(btor, cond, then, else);
+  }
+
+  SMTExpr smt_var(uint32_t width, std::string name)
+  {
+    auto bvsort = boolector_bitvec_sort(btor, width);
+    auto result = solver.boolector_var(btor, bvsort, name.c_str());
+    boolector_release_sort(btor, bvsort);
+    return result;
+  }
+
+  void smt_copy(SMTExpr e)
+  {
+    boolector_copy(btor, e);
   }
 
   void smt_release(SMTExpr e)
