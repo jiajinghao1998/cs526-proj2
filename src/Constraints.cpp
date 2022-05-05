@@ -1,13 +1,13 @@
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/Analysis/CFG.h>
-#include <set>
-#include "PathConstraint.h"
+#include <llvm/IR/GetElementPtrTypeIterator.h>
+#include "Constraints.h"
 
 using namespace llvm;
 
 SMTExpr PathConstraint::calcConstraint(Instruction *I,
   SmallVector<std::pair<BasicBlock *, BasicBlock *>, 16> backEdges) {
-  std::set<std::pair<BasicBlock *, BasicBlock *>> backEdgesSet(backEdges.begin(), backEdges.end())
+  std::set<std::pair<BasicBlock *, BasicBlock *>> backEdgesSet(backEdges.begin(), backEdges.end());
   return calcConstraint(I->getParent(), backEdgesSet);
 }
 
@@ -29,15 +29,15 @@ SMTExpr PathConstraint::calcConstraint(BasicBlock *BB,
   expr = solver.smt_false();
 
   for(auto it = pred_begin(BB), eit = pred_end(BB); it != eit; ++it) {
-    if (backEdgesSet.find(std::make_pair(&*it, BB)) == backEdgesSet.end()) {
+    if (backEdgesSet.find(std::make_pair(*it, BB)) == backEdgesSet.end()) {
       // assume BB to be well-formed, i.e. predBr is not null
-      auto predBr = it->getTerminator();
+      auto predBr = (*it)->getTerminator();
       auto brExpr = calcBrConstraint(predBr, BB);
-      auto assignExpr = calcAssignConstraint(BB, &*it);
+      auto assignExpr = calcAssignConstraint(BB, *it);
       auto andExpr = solver.smt_and(brExpr, assignExpr);
       solver.smt_release(brExpr);
       solver.smt_release(assignExpr);
-      auto predExpr = calcConstraint(&*it, backEdgesSet);
+      auto predExpr = calcConstraint(*it, backEdgesSet);
       auto andExpr2 = solver.smt_and(andExpr, predExpr);
       solver.smt_release(andExpr);
       solver.smt_release(predExpr);
@@ -47,7 +47,7 @@ SMTExpr PathConstraint::calcConstraint(BasicBlock *BB,
       expr = newExpr;
     }
   }
-  
+
   solver.smt_copy(expr);
   BBToExpr[BB] = expr;
   return expr;
@@ -56,12 +56,12 @@ SMTExpr PathConstraint::calcConstraint(BasicBlock *BB,
 SMTExpr PathConstraint::calcAssignConstraint(BasicBlock *BB, BasicBlock *Pred) {
   auto expr = solver.smt_true();
   for (auto &I: *BB) {
-    if (auto *PN = dyn_cast<PHINode>(I)) {
-      Value *V = getIncomingValueForBlock(Pred);
-      if (isa<UndefValue>(V))
+    if (auto *PN = dyn_cast<PHINode>(&I)) {
+      Value *V = PN->getIncomingValueForBlock(Pred);
+      if (isa<UndefValue>(V) || !ValCon.isAnalyzable(V->getType()))
         continue;
-      auto incomingExpr = VC.calcConstraint(V);
-      auto phiExpr = VC.calcConstraint(PN);
+      auto incomingExpr = ValCon.calcConstraint(V);
+      auto phiExpr = ValCon.calcConstraint(PN);
       auto eqExpr = solver.smt_eq(incomingExpr, phiExpr);
       solver.smt_release(incomingExpr);
       solver.smt_release(phiExpr);
@@ -76,36 +76,36 @@ SMTExpr PathConstraint::calcAssignConstraint(BasicBlock *BB, BasicBlock *Pred) {
 
 SMTExpr PathConstraint::calcBrConstraint(Instruction *I, BasicBlock *BB) {
   if (auto *BI = dyn_cast<BranchInst>(I)) {
-    auto expr = VC.calcConstraint(BI->getCondition());
+    auto expr = ValCon.calcConstraint(BI->getCondition());
 
     // Check BB path
     if (BI->getSuccessor(0) != BB) {
-      auto newExpr = solver.smt_not(expr);
+      auto newExpr = solver.smt_neg(expr);
       solver.smt_release(expr);
       expr = newExpr;
     }
     return expr;
 
   } else if (auto *SI = dyn_cast<SwitchInst>(I)) {
-    auto condExpr = VC.calcConstraint(SI->getCondition());
+    auto condExpr = ValCon.calcConstraint(SI->getCondition());
     auto expr = solver.smt_false();
     for (auto C: SI->cases()) {
       // This case goes to our BB
-      if (C->getCaseSuccessor() == BB) {
-        auto caseExpr = VC.calcConstraint(C->getCaseValue());
+      if (C.getCaseSuccessor() == BB) {
+        auto caseExpr = ValCon.calcConstraint(C.getCaseValue());
         auto eqExpr = solver.smt_eq(condExpr, caseExpr);
         solver.smt_release(caseExpr);
-        auto newExpr = smt_or(expr, eqExpr);
+        auto newExpr = solver.smt_or(expr, eqExpr);
         solver.smt_release(eqExpr);
         solver.smt_release(expr);
         expr = newExpr;
       }
     }
 
-    if (I->getDefaultDest() == BB) {
+    if (SI->getDefaultDest() == BB) {
       auto defaultExpr = solver.smt_true();
       for (auto C: SI->cases()) {
-        auto caseExpr = VC.calcConstraint(C->getCaseValue());
+        auto caseExpr = ValCon.calcConstraint(C.getCaseValue());
         auto neExpr = solver.smt_ne(condExpr, caseExpr);
         solver.smt_release(caseExpr);
         auto newExpr = solver.smt_and(defaultExpr, neExpr);
@@ -179,15 +179,15 @@ SMTExpr ValueConstraint::calcInstConstraint(llvm::Instruction *I) {
 SMTExpr ValueConstraint::calcConstConstraint(llvm::Constant *C) {
   if (auto CI = dyn_cast<ConstantInt>(C))
     return solver.smt_const(CI->getValue());
-  else if(auto CPN = dyn_cast<ConstantPointerNULL>(C))
+  else if(auto CPN = dyn_cast<ConstantPointerNull>(C))
     return solver.smt_const(APInt::getNullValue(DL.getPointerSizeInBits()));
   else if(auto GEPO = dyn_cast<GEPOperator>(C))
     return calcGEPOConstraint(GEPO);
   else
-    return varConstraint(I);
+    return varConstraint(C);
 }
 
-SMTExpr ValueConstraint::varConstraint(value *V) {
+SMTExpr ValueConstraint::varConstraint(Value *V) {
   std::string name = V->getName().str();
   return solver.smt_var(DL.getTypeSizeInBits(V->getType()), name);
 }
@@ -228,8 +228,8 @@ SMTExpr ValueConstraint::calcBinOpConstraint(BinaryOperator *BO) {
     llvm_unreachable("Invalid binary operator");
   }
 
-  solver.release(e1);
-  solver.release(e2);
+  solver.smt_release(e1);
+  solver.smt_release(e2);
   return expr;
 }
 
@@ -263,8 +263,8 @@ SMTExpr ValueConstraint::calcICmpConstraint(ICmpInst *ICI) {
     llvm_unreachable("Invalid ICmp predicate");
   }
 
-  solver.release(e1);
-  solver.release(e2);
+  solver.smt_release(e1);
+  solver.smt_release(e2);
   return expr;
 }
 
@@ -274,7 +274,7 @@ SMTExpr ValueConstraint::calcGEPConstraint(GetElementPtrInst *GEPI) {
 
 
 SMTExpr ValueConstraint::calcGEPOConstraint(GEPOperator *GEPO) {
-  auto base = GEPO->getPointerOperand();
+  auto base = calcConstraint(GEPO->getPointerOperand());
   auto ptrSize = DL.getPointerSizeInBits();
   auto ceOff = APInt::getNullValue(ptrSize);
 
@@ -307,31 +307,31 @@ SMTExpr ValueConstraint::calcGEPOConstraint(GEPOperator *GEPO) {
     } else {//variable
       auto AU = dyn_cast<ArrayType>(it.getIndexedType());
       assert(AU);
-      ET = AU->getElementType();
+      auto ET = AU->getElementType();
       auto elemSize = APInt(ptrSize, DL.getTypeAllocSize(ET));
       auto elemSizeExpr = solver.smt_const(elemSize);
 
       auto idxExpr = calcConstraint(V);
-      unsigned IdxSize = solver.smt_get_width(idxExpr);
+      unsigned idxSize = solver.smt_get_width(idxExpr);
 
       // Sometimes a 64-bit GEP's index is 32-bit.
       // Reference: https://github.com/CRYPTOlab/kint/blob/c3402fa03ff76657045ca564a96176e356fa0e7a/src/ValueGen.cc#L198
-      if (IdxSize != PtrSize) {
+      if (idxSize != ptrSize) {
         errs() << "calcGEPConstraint: diff size\n";
         SMTExpr Tmp;
-        if (IdxSize < PtrSize)
-          Tmp = solver.sign_sext(idxExpr, PtrSize - IdxSize);
+        if (idxSize < ptrSize)
+          Tmp = solver.smt_sext(idxExpr, ptrSize - idxSize);
         else
-          Tmp = solver.extract(idxExpr, PtrSize - 1, 0);
-        solver.release(idxExpr);
+          Tmp = solver.smt_slice(idxExpr, ptrSize - 1, 0);
+        solver.smt_release(idxExpr);
         idxExpr = Tmp;
       }
       auto varOffExpr = solver.smt_mul(idxExpr, elemSizeExpr);
-      solver.release(idxExpr);
-      solver.release(elemSizeExpr);
+      solver.smt_release(idxExpr);
+      solver.smt_release(elemSizeExpr);
       auto newbase = solver.smt_add(base, varOffExpr);
-      solver.release(base);
-      solver.release(varOffExpr);
+      solver.smt_release(base);
+      solver.smt_release(varOffExpr);
       base = newbase;
     }
 
@@ -346,35 +346,35 @@ SMTExpr ValueConstraint::calcGEPOConstraint(GEPOperator *GEPO) {
     return base;
 
   auto ceOffExpr = solver.smt_const(ceOff);
-  auto newBase = auto newbase = solver.smt_add(base, ceOffExpr);
-  solver.release(base);
+  auto newBase = solver.smt_add(base, ceOffExpr);
+  solver.smt_release(base);
   base = newBase;
   return base;
 }
 
 SMTExpr ValueConstraint::calcTruncConstraint(TruncInst *TI) {
-  auto *width = DL.getTypeSizeInBits(TI->getDestTy());
+  auto width = DL.getTypeSizeInBits(TI->getDestTy());
   auto e = calcConstraint(TI->getOperand(0));
   auto expr = solver.smt_slice(e, width - 1, 0);
-  solver.release(e);
+  solver.smt_release(e);
   return expr;
 }
 
 SMTExpr ValueConstraint::calcZExtConstraint(ZExtInst *ZEI) {
-  auto *DWidth = DL.getTypeSizeInBits(ZEI->getDestTy());
-  auto *SWidth = DL.getTypeSizeInBits(ZEI->getSrcTy());
+  auto DWidth = DL.getTypeSizeInBits(ZEI->getDestTy());
+  auto SWidth = DL.getTypeSizeInBits(ZEI->getSrcTy());
   auto e = calcConstraint(ZEI->getOperand(0));
-  auto expr = solver.smt_uext(e, DWidth - SWidth);
-  solver.release(e);
+  auto expr = solver.smt_zext(e, DWidth - SWidth);
+  solver.smt_release(e);
   return expr;
 }
 
 SMTExpr ValueConstraint::calcSExtConstraint(SExtInst *SEI) {
-  auto *DWidth = DL.getTypeSizeInBits(SEI->getDestTy());
-  auto *SWidth = DL.getTypeSizeInBits(SEI->getSrcTy());
+  auto DWidth = DL.getTypeSizeInBits(SEI->getDestTy());
+  auto SWidth = DL.getTypeSizeInBits(SEI->getSrcTy());
   auto e = calcConstraint(SEI->getOperand(0));
   auto expr = solver.smt_sext(e, DWidth - SWidth);
-  solver.release(e);
+  solver.smt_release(e);
   return expr;
 }
 
@@ -383,9 +383,9 @@ SMTExpr ValueConstraint::calcSelectConstraint(SelectInst *SI) {
   auto trueExpr = calcConstraint(SI->getTrueValue());
   auto falseExpr = calcConstraint(SI->getFalseValue());
   auto expr = solver.smt_cond(condExpr, trueExpr, falseExpr);
-  solver.release(condExpr);
-  solver.release(trueExpr);
-  solver.release(falseExpr);
+  solver.smt_release(condExpr);
+  solver.smt_release(trueExpr);
+  solver.smt_release(falseExpr);
   return expr;
 }
 
@@ -395,8 +395,8 @@ SMTExpr ValueConstraint::CalcExtractValueConstraint(ExtractValueInst *EVI) {
 }
 
 SMTExpr ValueConstraint::calcBitCastConstraint(BitCastInst *BCI) {
-  auto *DWidth = DL.getTypeSizeInBits(BCI->getDestTy());
-  auto *SWidth = DL.getTypeSizeInBits(BCI->getSrcTy());
+  auto DWidth = DL.getTypeSizeInBits(BCI->getDestTy());
+  auto SWidth = DL.getTypeSizeInBits(BCI->getSrcTy());
   auto V = BCI->getOperand(0);
 
   // TODO: BCI->getOperand(0) might be float?
@@ -407,41 +407,41 @@ SMTExpr ValueConstraint::calcBitCastConstraint(BitCastInst *BCI) {
 }
 
 SMTExpr ValueConstraint::calcIntToPtrConstraint(IntToPtrInst *ITPI) {
-  auto *DWidth = DL.getTypeSizeInBits(ITPI->getDestTy());
-  auto *SWidth = DL.getTypeSizeInBits(ITPI->getSrcTy());
+  auto DWidth = DL.getTypeSizeInBits(ITPI->getDestTy());
+  auto SWidth = DL.getTypeSizeInBits(ITPI->getSrcTy());
   auto e = calcConstraint(ITPI->getOperand(0));
-  auto expr;
+  SMTExpr expr;
 
-  if (ITPI->isNoopCast())
+  if (ITPI->isNoopCast(DL))
     return e;
 
   assert(DWidth != SWidth);
 
   expr = DWidth < SWidth ? solver.smt_slice(e, DWidth - 1, 0) :
                            solver.smt_zext(e, DWidth - SWidth);
-  solver.release(e);
+  solver.smt_release(e);
   return expr;
 }
 
 SMTExpr ValueConstraint::calcPtrToIntConstraint(PtrToIntInst *PTII) {
-  auto *DWidth = DL.getTypeSizeInBits(PTII->getDestTy());
-  auto *SWidth = DL.getTypeSizeInBits(PTII->getSrcTy());
+  auto DWidth = DL.getTypeSizeInBits(PTII->getDestTy());
+  auto SWidth = DL.getTypeSizeInBits(PTII->getSrcTy());
   auto e = calcConstraint(PTII->getOperand(0));
-  auto expr;
+  SMTExpr expr;
 
-  if (PTII->isNoopCast())
+  if (PTII->isNoopCast(DL))
     return e;
 
   assert(DWidth != SWidth);
 
   expr = DWidth < SWidth ? solver.smt_slice(e, DWidth - 1, 0) :
                            solver.smt_zext(e, DWidth - SWidth);
-  solver.release(e);
+  solver.smt_release(e);
   return expr;
 }
 
 // Ref: https://github.com/CRYPTOlab/kint/blob/master/src/ValueGen.cc#L298
-bool ValueConstraint::isAnalyzable(Type *Ty) {
+bool ValueConstraint::isAnalyzable(Type *Ty) const {
 	return Ty->isIntegerTy()
 		|| Ty->isPointerTy()
 		|| Ty->isFunctionTy();

@@ -1,3 +1,6 @@
+#ifndef SMTSOLVER_H
+#define SMTSOLVER_H
+
 #include <llvm/ADT/APInt.h>
 #include <llvm/ADT/SmallString.h>
 #include <boolector.h>
@@ -5,12 +8,13 @@
 typedef BoolectorNode *SMTExpr;
 
 class SMTSolver {
-  Btor *btor
+  Btor *btor;
 
 public:
   SMTSolver() : btor(boolector_new()) {}
   ~SMTSolver()
   {
+    boolector_release_all(btor);
     boolector_delete(btor);
   }
 
@@ -28,6 +32,11 @@ public:
   SMTExpr smt_false()
   {
     return boolector_false(btor);
+  }
+
+  SMTExpr smt_neg(SMTExpr e1)
+  {
+    return boolector_neg(btor, e1);
   }
 
   SMTExpr smt_and(SMTExpr e1, SMTExpr e2)
@@ -150,9 +159,9 @@ public:
     return boolector_get_width(btor, e);
   }
 
-  SMTExpr smt_uext(SMTExpr e, uint32_t width)
+  SMTExpr smt_zext(SMTExpr e, uint32_t width)
   {
-    boolector_uext(btor, e, width);
+    return boolector_uext(btor, e, width);
   }
 
   SMTExpr smt_sext(SMTExpr e, uint32_t width)
@@ -174,22 +183,22 @@ public:
     if (val.isSignedIntN(val.getBitWidth()))
       val.toStringSigned(str, 16);
     else
-      val.toStringUnSigned(str, 16);
+      val.toStringUnsigned(str, 16);
 
     auto result = boolector_consth(btor, bvsort, str.c_str());
     boolector_release_sort(btor, bvsort);
     return result;
   }
 
-  SMTExpr smt_cond(SMTExpr cond, SMTExpr then, SMTExpr else)
+  SMTExpr smt_cond(SMTExpr c, SMTExpr t, SMTExpr e)
   {
-    return solver.boolector_cond(btor, cond, then, else);
+    return boolector_cond(btor, c, t, e);
   }
 
   SMTExpr smt_var(uint32_t width, std::string name)
   {
     auto bvsort = boolector_bitvec_sort(btor, width);
-    auto result = solver.boolector_var(btor, bvsort, name.c_str());
+    auto result = boolector_var(btor, bvsort, name.c_str());
     boolector_release_sort(btor, bvsort);
     return result;
   }
@@ -203,4 +212,6 @@ public:
   {
     boolector_release(btor, e);
   }
-}
+};
+
+#endif /* SMTSOLVER_H */
