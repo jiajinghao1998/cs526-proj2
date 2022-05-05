@@ -20,20 +20,19 @@
 //===----------------------------------------------------------------------===//
 
 #define DEBUG_TYPE "kint"
-#include <iostream>
-#include "llvm/IR/DerivedTypes.h"
-#include "llvm/IR/Function.h"
-#include "llvm/IR/Instructions.h"
-#include "llvm/IR/LLVMContext.h"
-#include "llvm/IR/Module.h"
-#include "llvm/IR/GetElementPtrTypeIterator.h"
-#include "llvm/Pass.h"
-#include "llvm/Transforms/Utils/PromoteMemToReg.h"
-#include "llvm/Support/Debug.h"
-#include "llvm/ADT/Statistic.h"
-#include "llvm/ADT/SmallVector.h"
-#include "llvm/ADT/SmallPtrSet.h"
-#include "llvm/Analysis/ValueTracking.h"
+#include <llvm/ADT/Statistic.h>
+#include <llvm/ADT/SmallVector.h>
+#include <llvm/ADT/SmallPtrSet.h>
+#include <llvm/Analysis/ValueTracking.h>
+#include <llvm/IR/DerivedTypes.h>
+#include <llvm/IR/Function.h>
+#include <llvm/IR/Instructions.h>
+#include <llvm/IR/LLVMContext.h>
+#include <llvm/IR/Module.h>
+#include <llvm/Pass.h>
+#include <llvm/Support/Debug.h>
+#include "CompilerAttribute.h"
+
 using namespace llvm;
 
 STATISTIC(NumInserted,  "Number of bounds check inserted");
@@ -42,7 +41,7 @@ namespace { // Begin anonymous namespace
 
 struct CheckInsertion : public FunctionPass {
   static char ID; // Pass identification
-  CheckInsertion() : FunctionPass(ID) { }
+  CheckInsertion() : FunctionPass(ID) {}
 
   // Entry point
   bool runOnFunction(Function &F);
@@ -65,14 +64,7 @@ char CheckInsertion::ID = 0;
 static RegisterPass<CheckInsertion> X("kint-check-insertion",
           "BoundsCheckInsertion pass for Kint",
           false /* does not modify the CFG */,
-          false /* transformation, not just analysis */);
-
-
-// Public interface to create the ScalarReplAggregates pass.
-// This function is provided to you.
-FunctionPass *createMyScalarReplAggregatesPass() {
-  return new CheckInsertion();
-}
+          true /* transformation, not just analysis */);
 
 
 //===----------------------------------------------------------------------===//
@@ -92,8 +84,18 @@ bool CheckInsertion::runOnFunction(Function &F) {
       if (!BO || !isObservable(BO))
         continue;
 
-      Changed = true;
-      insertCheck(BO);
+      switch (BO->getOpcode()) {
+      case Instruction::Add:
+        fallthrough;
+      case Instruction::Sub:
+        fallthrough;
+      case Instruction::Mul:
+        Changed = true;
+        insertCheck(BO);
+        break;
+      default:
+        break;
+      }
     }
   }
 
@@ -109,7 +111,7 @@ void CheckInsertion::insertCheck(BinaryOperator *I) {
 
   Type *ArgTys[3] = { Type::getInt8Ty(C), Op1->getType(), Op2->getType()};
   auto *FnTy = FunctionType::get(Type::getVoidTy(C), ArgTys, false);
-  auto F = M->getOrInsertFunction("kint_bug_on", FnTy);
+  auto F = M->getOrInsertFunction("kint_bug_on" + std::to_string((uint64_t)I), FnTy);
 
   auto *BOp = Constant::getIntegerValue(Type::getInt8Ty(C), APInt(8, I->getOpcode()));
 

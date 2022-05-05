@@ -1,7 +1,7 @@
 LEVEL = ../..
 
 ## change or use make TARGET=inputfilename
-TARGET=trivial
+TARGET=int_add
 
 ## replace LLVMROOT and SROALIB as appropriate
 NETID = `whoami`
@@ -40,7 +40,7 @@ test: $(TARGET).test.bc
 
 %.debug.bc: %.llvm.bc
 	$(LLVMOPT) $(DEBUGOPTS) -enable-new-pm=0 < $< | \
-	$(LLVMOPT) -load $(SROALIB) -kint-check-insertion -verify -enable-new-pm=0 -o=$@
+	$(LLVMOPT) -load $(SROALIB) -kint-check-insertion -verify -kint-smt-query -enable-new-pm=0 -o=$@
 
 clean:
 	$(RM) -f *.debug.bc *.test.bc *.llvm.bc *.ll

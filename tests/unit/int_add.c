@@ -1,8 +1,8 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include <climits>
+#include <limits.h>
 
-int main(int argc, char* argv[])
+int main(void)
 {
   int i1 = INT_MAX;
   int i2 = 1;

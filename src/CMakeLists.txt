@@ -3,6 +3,7 @@ INCLUDE_DIRECTORIES(${CMAKE_CURRENT_SOURCE_DIR}/../boolector/src)
 add_library(KINT MODULE
     # List your source files here.
     CheckInsertion.cpp
+    CompilerAttribute.h
     Constraints.cpp
     Constraints.h
     SMTQuery.cpp
