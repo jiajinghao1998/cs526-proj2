@@ -31,6 +31,8 @@
 #include <llvm/IR/Module.h>
 #include <llvm/Pass.h>
 #include <llvm/Support/Debug.h>
+#include <cstdint>
+#include <sstream>
 #include "CompilerAttribute.h"
 
 using namespace llvm;
@@ -111,7 +113,10 @@ void CheckInsertion::insertCheck(BinaryOperator *I) {
 
   Type *ArgTys[3] = { Type::getInt8Ty(C), Op1->getType(), Op2->getType()};
   auto *FnTy = FunctionType::get(Type::getVoidTy(C), ArgTys, false);
-  auto F = M->getOrInsertFunction("kint_bug_on" + std::to_string((uint64_t)I), FnTy);
+  
+  std::stringstream ss;
+  ss << std::hex << I;
+  auto F = M->getOrInsertFunction("kint_bug_on" + ss.str(), FnTy);
 
   auto *BOp = Constant::getIntegerValue(Type::getInt8Ty(C), APInt(8, I->getOpcode()));
 

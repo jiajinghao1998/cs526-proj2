@@ -33,7 +33,7 @@ static RegisterPass<SMTQuery> X("kint-smt-query",
           false /* transformation, not just analysis */);
 
 bool SMTQuery::isBoundCheckFunc(const Function *F) {
-  return std::string(F->getName()).compare(0, 11, "kint_bug_on") == 0;
+  return static_cast<std::string>(F->getName()).compare(0, 11, "kint_bug_on") == 0;
 }
 
 bool SMTQuery::runOnFunction(Function &F) {
