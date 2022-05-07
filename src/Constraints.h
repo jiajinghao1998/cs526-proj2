@@ -1,6 +1,7 @@
 #ifndef CONSTRAINTS_H
 #define CONSTRAINTS_H
 
+#include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/DenseMap.h>
 #include <llvm/IR/BasicBlock.h>
 #include <llvm/IR/DataLayout.h>
@@ -12,7 +13,7 @@
 
 class ValueConstraint {
   SMTSolver &solver;
-  llvm::DataLayout &DL;
+  const llvm::DataLayout &DL;
   llvm::DenseMap<llvm::Value *, SMTExpr> valueToExpr;
 
   SMTExpr calcInstConstraint(llvm::Instruction *);
@@ -31,9 +32,10 @@ class ValueConstraint {
   SMTExpr calcIntToPtrConstraint(llvm::IntToPtrInst *);
   SMTExpr calcPtrToIntConstraint(llvm::PtrToIntInst *);
 
+  static bool isAnalyzable(const llvm::Type *);
+
 public:
-  ValueConstraint(SMTSolver &solver, llvm::DataLayout &DL) : solver(solver),
-      DL(DL) {}
+  ValueConstraint(SMTSolver &solver, const llvm::DataLayout &DL) : solver(solver), DL(DL) {}
   ~ValueConstraint() = default;
 
   // don't allow copy/move
@@ -43,7 +45,7 @@ public:
   ValueConstraint &operator=(ValueConstraint &&) = delete;
 
   SMTExpr calcConstraint(llvm::Value *);
-  bool isAnalyzable(llvm::Type *) const;
+  SMTExpr calcBoundCheckConstraint(llvm::CallInst *);
 
   friend class PathConstraint;
 };
@@ -52,14 +54,15 @@ class PathConstraint {
   ValueConstraint &ValCon;
   SMTSolver &solver;
   llvm::DenseMap<llvm::BasicBlock *, SMTExpr> BBToExpr;
+  const std::set<std::pair<const llvm::BasicBlock *, const llvm::BasicBlock *>> backEdgesSet;
 
-  SMTExpr calcConstraint(llvm::BasicBlock *BB,
-    const std::set<std::pair<llvm::BasicBlock *, llvm::BasicBlock *>> backEdgesSet);
   SMTExpr calcAssignConstraint(llvm::BasicBlock *BB, llvm::BasicBlock *Pred);
   SMTExpr calcBrConstraint(llvm::Instruction *I, llvm::BasicBlock *BB);
 
 public:
-  PathConstraint(ValueConstraint &VC) : ValCon(VC), solver(VC.solver) {}
+  PathConstraint(ValueConstraint &VC,
+    llvm::ArrayRef<std::pair<const llvm::BasicBlock *, const llvm::BasicBlock *>> BE) :
+    ValCon(VC), solver(VC.solver), backEdgesSet(BE.begin(), BE.end()) {}
   ~PathConstraint() = default;
 
   // don't allow copy/move
@@ -68,8 +71,8 @@ public:
   PathConstraint &operator=(const PathConstraint &) = delete;
   PathConstraint &operator=(PathConstraint &&) = delete;
 
-  SMTExpr calcConstraint(llvm::Instruction *I,
-    llvm::SmallVector<std::pair<llvm::BasicBlock *, llvm::BasicBlock *>, 16> backEdges);
+  SMTExpr calcConstraint(llvm::Instruction *I);
+  SMTExpr calcConstraint(llvm::BasicBlock *BB);
 };
 
 #endif /* CONSTRAINTS_H */

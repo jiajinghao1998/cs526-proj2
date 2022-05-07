@@ -4,6 +4,7 @@
 #include <llvm/ADT/APInt.h>
 #include <llvm/ADT/SmallString.h>
 #include <boolector.h>
+#include <cstdio>
 
 typedef BoolectorNode *SMTExpr;
 
@@ -11,7 +12,10 @@ class SMTSolver {
   Btor *btor;
 
 public:
-  SMTSolver() : btor(boolector_new()) {}
+  SMTSolver() : btor(boolector_new())
+  {
+    boolector_set_opt(btor, BTOR_OPT_PRETTY_PRINT, 1);
+  }
   ~SMTSolver()
   {
     boolector_release_all(btor);
@@ -59,14 +63,44 @@ public:
     return boolector_add(btor, e1, e2);
   }
 
+  SMTExpr smt_sadd_overflow(SMTExpr e1, SMTExpr e2)
+  {
+    return boolector_saddo(btor, e1, e2);
+  }
+
+  SMTExpr smt_uadd_overflow(SMTExpr e1, SMTExpr e2)
+  {
+    return boolector_uaddo(btor, e1, e2);
+  }
+
   SMTExpr smt_sub(SMTExpr e1, SMTExpr e2)
   {
     return boolector_sub(btor, e1, e2);
   }
 
+  SMTExpr smt_ssub_overflow(SMTExpr e1, SMTExpr e2)
+  {
+    return boolector_ssubo(btor, e1, e2);
+  }
+
+  SMTExpr smt_usub_overflow(SMTExpr e1, SMTExpr e2)
+  {
+    return boolector_usubo(btor, e1, e2);
+  }
+
   SMTExpr smt_mul(SMTExpr e1, SMTExpr e2)
   {
     return boolector_mul(btor, e1, e2);
+  }
+
+  SMTExpr smt_smul_overflow(SMTExpr e1, SMTExpr e2)
+  {
+    return boolector_smulo(btor, e1, e2);
+  }
+
+  SMTExpr smt_umul_overflow(SMTExpr e1, SMTExpr e2)
+  {
+    return boolector_umulo(btor, e1, e2);
   }
 
   SMTExpr smt_udiv(SMTExpr e1, SMTExpr e2)
@@ -211,6 +245,25 @@ public:
   void smt_release(SMTExpr e)
   {
     boolector_release(btor, e);
+  }
+
+  bool smt_query(SMTExpr e)
+  {
+    boolector_assert(btor, e);
+    auto result = boolector_sat(btor);
+    switch (result) {
+    case BOOLECTOR_SAT:
+      return true;
+    case BOOLECTOR_UNSAT:
+      return false;
+    default:
+      assert(0 && "smt_query unreachable");
+    }
+  }
+
+  void smt_dump()
+  {
+    boolector_dump_smt2(btor, stderr);
   }
 };
 

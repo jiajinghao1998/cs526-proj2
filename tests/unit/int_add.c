@@ -1,11 +1,8 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <limits.h>
 
 int main(void)
 {
-  int i1 = INT_MAX;
-  int i2 = 1;
+  int i1 = 1;
+  int i2 = 2147483647;
 
   return i1 + i2;
 }

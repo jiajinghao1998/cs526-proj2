@@ -16,8 +16,12 @@ LLVMOPT = $(LLVMROOT)/bin/opt
 
 ## Other choices: test or comparecfe (these will be provided later)
 default: debug
-DEBUGOPTS =  -verify -inline -mem2reg -simplifycfg -mem2reg -globalopt -globaldce -instcombine -adce -instcombine -simplifycfg -mem2reg
-
+#DEBUGOPTS =  -verify -targetlibinfo -tbaa -basic-aa -globalopt -ipsccp -deadargelim \
+#	-simplifycfg -basic-aa -prune-eh -inline -function-attrs -argpromotion \
+#	-mem2reg -sroa -early-cse -lazy-value-info \
+#	-jump-threading -correlated-propagation -simplifycfg \
+#	-strip-dead-prototypes -globaldce -constmerge -adce -simplifycfg -O2
+DEBUGOPTS = -verify -mem2reg
 testsimple: debug
 debug: $(TARGET).debug.bc
 disassembly: $(TARGET).llvm.ll $(TARGET).debug.ll
@@ -36,11 +40,11 @@ test: $(TARGET).test.bc
 
 
 %.llvm.bc: %.c
-	$(LLVMGCC) -S -emit-llvm -o - $< | $(LLVMAS) -o=$@
+	$(LLVMGCC) -Xclang -disable-O0-optnone -S -emit-llvm -o - $< | $(LLVMAS) -o=$@
 
 %.debug.bc: %.llvm.bc
-	$(LLVMOPT) $(DEBUGOPTS) -enable-new-pm=0 < $< | \
-	$(LLVMOPT) -load $(SROALIB) -kint-check-insertion -verify -kint-smt-query -enable-new-pm=0 -o=$@
+	$(LLVMOPT) $(DEBUGOPTS) -stats -enable-new-pm=0 < $< | \
+	$(LLVMOPT) -load $(SROALIB) -kint-check-insertion -print-module -verify -kint-smt-query -enable-new-pm=0 -o=$@
 
 clean:
 	$(RM) -f *.debug.bc *.test.bc *.llvm.bc *.ll

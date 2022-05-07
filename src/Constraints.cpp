@@ -1,18 +1,16 @@
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/Analysis/CFG.h>
 #include <llvm/IR/GetElementPtrTypeIterator.h>
+#include <llvm/Support/raw_ostream.h>
 #include "Constraints.h"
 
 using namespace llvm;
 
-SMTExpr PathConstraint::calcConstraint(Instruction *I,
-  SmallVector<std::pair<BasicBlock *, BasicBlock *>, 16> backEdges) {
-  std::set<std::pair<BasicBlock *, BasicBlock *>> backEdgesSet(backEdges.begin(), backEdges.end());
-  return calcConstraint(I->getParent(), backEdgesSet);
+SMTExpr PathConstraint::calcConstraint(Instruction *I) {
+  return calcConstraint(I->getParent());
 }
 
-SMTExpr PathConstraint::calcConstraint(BasicBlock *BB,
-  const std::set<std::pair<BasicBlock *, BasicBlock *>> backEdgesSet) {
+SMTExpr PathConstraint::calcConstraint(BasicBlock *BB) {
   auto expr = BBToExpr.lookup(BB);
   if (expr) {
     solver.smt_copy(expr);
@@ -37,7 +35,7 @@ SMTExpr PathConstraint::calcConstraint(BasicBlock *BB,
       auto andExpr = solver.smt_and(brExpr, assignExpr);
       solver.smt_release(brExpr);
       solver.smt_release(assignExpr);
-      auto predExpr = calcConstraint(*it, backEdgesSet);
+      auto predExpr = calcConstraint(*it);
       auto andExpr2 = solver.smt_and(andExpr, predExpr);
       solver.smt_release(andExpr);
       solver.smt_release(predExpr);
@@ -58,7 +56,7 @@ SMTExpr PathConstraint::calcAssignConstraint(BasicBlock *BB, BasicBlock *Pred) {
   for (auto &I: *BB) {
     if (auto *PN = dyn_cast<PHINode>(&I)) {
       Value *V = PN->getIncomingValueForBlock(Pred);
-      if (isa<UndefValue>(V) || !ValCon.isAnalyzable(V->getType()))
+      if (isa<UndefValue>(V) || !ValueConstraint::isAnalyzable(V->getType()))
         continue;
       auto incomingExpr = ValCon.calcConstraint(V);
       auto phiExpr = ValCon.calcConstraint(PN);
@@ -188,8 +186,10 @@ SMTExpr ValueConstraint::calcConstConstraint(llvm::Constant *C) {
 }
 
 SMTExpr ValueConstraint::varConstraint(Value *V) {
-  std::string name = V->getName().str();
-  return solver.smt_var(DL.getTypeSizeInBits(V->getType()), name);
+  std::string name;
+  raw_string_ostream oss(name);
+  oss << *V;
+  return solver.smt_var(DL.getTypeSizeInBits(V->getType()), oss.str());
 }
 
 SMTExpr ValueConstraint::calcBinOpConstraint(BinaryOperator *BO) {
@@ -200,30 +200,43 @@ SMTExpr ValueConstraint::calcBinOpConstraint(BinaryOperator *BO) {
   switch (BO->getOpcode()) {
   case Instruction::Add:
     expr = solver.smt_add(e1, e2);
+    break;
   case Instruction::Sub:
     expr = solver.smt_sub(e1, e2);
+    break;
   case Instruction::Mul:
     expr = solver.smt_mul(e1, e2);
+    break;
   case Instruction::UDiv:
     expr = solver.smt_udiv(e1, e2);
+    break;
   case Instruction::SDiv:
     expr = solver.smt_sdiv(e1, e2);
+    break;
   case Instruction::URem:
     expr = solver.smt_urem(e1, e2);
+    break;
   case Instruction::SRem:
     expr = solver.smt_srem(e1, e2);
+    break;
   case Instruction::Shl:
     expr = solver.smt_shl(e1, e2);
+    break;
   case Instruction::LShr:
     expr = solver.smt_lshr(e1, e2);
+    break;
   case Instruction::AShr:
     expr = solver.smt_ashr(e1, e2);
+    break;
   case Instruction::And:
     expr = solver.smt_and(e1, e2);
+    break;
   case Instruction::Or:
     expr = solver.smt_or(e1, e2);
+    break;
   case Instruction::Xor:
     expr = solver.smt_xor(e1, e2);
+    break;
   default:
     llvm_unreachable("Invalid binary operator");
   }
@@ -241,24 +254,34 @@ SMTExpr ValueConstraint::calcICmpConstraint(ICmpInst *ICI) {
   switch(ICI->getPredicate()) {
   case CmpInst::ICMP_EQ:
     expr = solver.smt_eq(e1, e2);
+    break;
   case CmpInst::ICMP_NE:
     expr = solver.smt_ne(e1, e2);
+    break;
   case CmpInst::ICMP_UGT:
     expr = solver.smt_ugt(e1, e2);
+    break;
   case CmpInst::ICMP_UGE:
     expr = solver.smt_uge(e1, e2);
+    break;
   case CmpInst::ICMP_ULT:
     expr = solver.smt_ult(e1, e2);
+    break;
   case CmpInst::ICMP_ULE:
     expr = solver.smt_ule(e1, e2);
+    break;
   case CmpInst::ICMP_SGT:
     expr = solver.smt_sgt(e1, e2);
+    break;
   case CmpInst::ICMP_SGE:
     expr = solver.smt_sge(e1, e2);
+    break;
   case CmpInst::ICMP_SLT:
     expr = solver.smt_slt(e1, e2);
+    break;
   case CmpInst::ICMP_SLE:
     expr = solver.smt_sle(e1, e2);
+    break;
   default:
     llvm_unreachable("Invalid ICmp predicate");
   }
@@ -395,8 +418,6 @@ SMTExpr ValueConstraint::CalcExtractValueConstraint(ExtractValueInst *EVI) {
 }
 
 SMTExpr ValueConstraint::calcBitCastConstraint(BitCastInst *BCI) {
-  auto DWidth = DL.getTypeSizeInBits(BCI->getDestTy());
-  auto SWidth = DL.getTypeSizeInBits(BCI->getSrcTy());
   auto V = BCI->getOperand(0);
 
   // TODO: BCI->getOperand(0) might be float?
@@ -440,8 +461,35 @@ SMTExpr ValueConstraint::calcPtrToIntConstraint(PtrToIntInst *PTII) {
   return expr;
 }
 
+SMTExpr ValueConstraint::calcBoundCheckConstraint(CallInst *CI) {
+  auto opcode = cast<ConstantInt>(CI->getArgOperand(0))->getZExtValue();
+  auto e1 = calcConstraint(CI->getArgOperand(1));
+  auto e2 = calcConstraint(CI->getArgOperand(2));
+  auto nsw = static_cast<bool>(cast<ConstantInt>(CI->getArgOperand(0))->getZExtValue());
+  SMTExpr expr;
+
+  switch (opcode) {
+  case Instruction::Add:
+    expr = nsw ? solver.smt_sadd_overflow(e1, e2) : solver.smt_uadd_overflow(e1, e2);
+    break;
+  case Instruction::Sub:
+    expr = nsw ? solver.smt_ssub_overflow(e1, e2) : solver.smt_usub_overflow(e1, e2);
+    break;
+  case Instruction::Mul:
+    expr = nsw ? solver.smt_smul_overflow(e1, e2) : solver.smt_umul_overflow(e1, e2);
+    break;
+  default:
+    llvm_unreachable("unsupported intop");
+  }
+
+  solver.smt_release(e1);
+  solver.smt_release(e2);
+
+  return expr;
+}
+
 // Ref: https://github.com/CRYPTOlab/kint/blob/master/src/ValueGen.cc#L298
-bool ValueConstraint::isAnalyzable(Type *Ty) const {
+bool ValueConstraint::isAnalyzable(const Type *Ty) {
 	return Ty->isIntegerTy()
 		|| Ty->isPointerTy()
 		|| Ty->isFunctionTy();

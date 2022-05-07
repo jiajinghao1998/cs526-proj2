@@ -16,10 +16,12 @@ target_compile_features(KINT PUBLIC cxx_std_14)
 # LLVM is (typically) built with no C++ RTTI. We need to match that;
 # otherwise, we'll get linker errors about missing RTTI data.
 set_target_properties(KINT PROPERTIES
-    COMPILE_FLAGS "-fno-rtti -fPIC"
+    COMPILE_FLAGS "-Wall -Wimplicit-fallthrough -fno-rtti -fPIC"
 )
 
 target_link_libraries(KINT ${CMAKE_CURRENT_SOURCE_DIR}/../boolector/build/lib/libboolector.a)
+target_link_libraries(KINT ${CMAKE_CURRENT_SOURCE_DIR}/../boolector/deps/install/lib/liblgl.a)
+target_link_libraries(KINT ${CMAKE_CURRENT_SOURCE_DIR}/../boolector/deps/install/lib/libbtor2parser.a)
 
 # Get proper shared-library behavior (where symbols are not necessarily
 # resolved when the shared library is linked) on OS X.

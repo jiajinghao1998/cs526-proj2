@@ -46,7 +46,7 @@ struct CheckInsertion : public FunctionPass {
   CheckInsertion() : FunctionPass(ID) {}
 
   // Entry point
-  bool runOnFunction(Function &F);
+  bool runOnFunction(Function &);
 
   // getAnalysisUsage - List passes required by this pass.  We also know it
   // will not alter the CFG, so say so.
@@ -56,8 +56,8 @@ struct CheckInsertion : public FunctionPass {
 
 private:
   // Add fields and helper functions for this pass here.
-  void insertCheck(BinaryOperator *I);
-  bool isObservable(Instruction *I);
+  void insertCheck(BinaryOperator *);
+  bool isObservable(Instruction *);
 };
 
 } // End anonymous namespace
@@ -104,24 +104,25 @@ bool CheckInsertion::runOnFunction(Function &F) {
   return Changed;
 }
 
-void CheckInsertion::insertCheck(BinaryOperator *I) {
-  auto *M = I->getParent()->getParent()->getParent();
+void CheckInsertion::insertCheck(BinaryOperator *BO) {
+  auto *M = BO->getParent()->getParent()->getParent();
   auto &C = M->getContext();
 
-  auto *Op1 = I->getOperand(0);
-  auto *Op2 = I->getOperand(1);
+  auto *Op1 = BO->getOperand(0);
+  auto *Op2 = BO->getOperand(1);
 
-  Type *ArgTys[3] = { Type::getInt8Ty(C), Op1->getType(), Op2->getType()};
+  Type *ArgTys[4] = { Type::getInt8Ty(C), Op1->getType(), Op2->getType(), Type::getInt1Ty(C) };
   auto *FnTy = FunctionType::get(Type::getVoidTy(C), ArgTys, false);
-  
+
   std::stringstream ss;
-  ss << std::hex << I;
+  ss << BO;
   auto F = M->getOrInsertFunction("kint_bug_on" + ss.str(), FnTy);
 
-  auto *BOp = Constant::getIntegerValue(Type::getInt8Ty(C), APInt(8, I->getOpcode()));
+  auto *BOp = Constant::getIntegerValue(Type::getInt8Ty(C), APInt(8, BO->getOpcode()));
+  auto *nsw = Constant::getIntegerValue(Type::getInt1Ty(C), APInt(1, BO->hasNoSignedWrap()));
 
-  Value *Args[3] = { BOp, Op1, Op2 };
-  CallInst::Create(F, Args, "", I);
+  Value *Args[4] = { BOp, Op1, Op2, nsw };
+  CallInst::Create(F, Args, "", BO);
 }
 
 bool CheckInsertion::isObservable(Instruction *I) {
