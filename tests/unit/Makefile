@@ -1,7 +1,7 @@
 LEVEL = ../..
 
 ## change or use make TARGET=inputfilename
-TARGET=int_add
+TARGET=simple_cases
 
 ## replace LLVMROOT and SROALIB as appropriate
 NETID = `whoami`

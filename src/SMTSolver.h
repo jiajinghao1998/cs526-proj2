@@ -3,8 +3,11 @@
 
 #include <llvm/ADT/APInt.h>
 #include <llvm/ADT/SmallString.h>
+#include <llvm/Support/raw_ostream.h>
 #include <boolector.h>
 #include <cstdio>
+
+using llvm::errs;
 
 typedef BoolectorNode *SMTExpr;
 
@@ -15,6 +18,7 @@ public:
   SMTSolver() : btor(boolector_new())
   {
     boolector_set_opt(btor, BTOR_OPT_PRETTY_PRINT, 1);
+    boolector_set_opt(btor, BTOR_OPT_MODEL_GEN, 1);
   }
   ~SMTSolver()
   {
@@ -209,15 +213,12 @@ public:
   }
 
   // Assume 32 bit int
-  SMTExpr smt_const(llvm::APInt val)
+  SMTExpr smt_const(const llvm::APInt &val)
   {
     auto bvsort = boolector_bitvec_sort(btor, val.getBitWidth());
 
     llvm::SmallString<20> str;
-    if (val.isSignedIntN(val.getBitWidth()))
-      val.toStringSigned(str, 16);
-    else
-      val.toStringUnsigned(str, 16);
+    val.toStringUnsigned(str, 16);
 
     auto result = boolector_consth(btor, bvsort, str.c_str());
     boolector_release_sort(btor, bvsort);
@@ -264,6 +265,11 @@ public:
   void smt_dump()
   {
     boolector_dump_smt2(btor, stderr);
+  }
+
+  void smt_print_model(char *fmt)
+  {
+    boolector_print_model(btor, fmt, stderr);
   }
 };
 

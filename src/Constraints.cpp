@@ -465,7 +465,7 @@ SMTExpr ValueConstraint::calcBoundCheckConstraint(CallInst *CI) {
   auto opcode = cast<ConstantInt>(CI->getArgOperand(0))->getZExtValue();
   auto e1 = calcConstraint(CI->getArgOperand(1));
   auto e2 = calcConstraint(CI->getArgOperand(2));
-  auto nsw = static_cast<bool>(cast<ConstantInt>(CI->getArgOperand(0))->getZExtValue());
+  auto nsw = static_cast<bool>(cast<ConstantInt>(CI->getArgOperand(3))->getZExtValue());
   SMTExpr expr;
 
   switch (opcode) {

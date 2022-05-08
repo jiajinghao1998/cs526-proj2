@@ -23,12 +23,12 @@ struct SMTQuery : public FunctionPass {
   }
 
 private:
-  SmallPtrSet<Value *, 32> reports;
+  SmallPtrSet<CallInst *, 32> reports;
 
   void doCheck(CallInst *, ArrayRef<std::pair<const BasicBlock *, const BasicBlock *>>);
 
-  static bool isBoundCheckFunc(const llvm::Function *);
-
+  static bool isBoundCheckFunc(const Function *);
+  static void printReport(const CallInst *);
 };
 
 } // End anonymous namespace
@@ -44,9 +44,23 @@ bool SMTQuery::isBoundCheckFunc(const Function *F) {
   return static_cast<std::string>(F->getName()).compare(0, 11, "kint_bug_on") == 0;
 }
 
+void SMTQuery::printReport(const CallInst *CI) {
+  auto *I = CI->getNextNode();
+
+  errs() << "Possible Integer error: " << I->getModule()->getName() << "::"
+    << I->getFunction()->getName();
+
+  auto BBName = I->getParent()->getName();
+  if (BBName != "")
+    errs() << "::" << BBName;
+
+  errs() << ": " << *I << '\n';
+}
+
 bool SMTQuery::runOnFunction(Function &F) {
   SmallVector<std::pair<const BasicBlock *, const BasicBlock *>, 16> backEdges;
   FindFunctionBackedges(F, backEdges);
+  reports.clear();
 
   for (auto &BB: F) {
     for (auto &I: BB) {
@@ -58,13 +72,13 @@ bool SMTQuery::runOnFunction(Function &F) {
   }
 
   for (auto P: reports)
-    errs() << *P << '\n';
+    printReport(&*P);
 
   return false;
 }
 
 void SMTQuery::doCheck(CallInst *CI, ArrayRef<std::pair<const BasicBlock *, const BasicBlock *>> backEdges) {
-  auto &DL = CI->getParent()->getParent()->getParent()->getDataLayout();
+  auto &DL = CI->getModule()->getDataLayout();
   SMTSolver solver;
   ValueConstraint ValCon(solver, DL);
   PathConstraint PathCon(ValCon, backEdges);
