@@ -23,11 +23,17 @@ struct SMTQuery : public FunctionPass {
   }
 
 private:
+  enum KINT_TYPE : unsigned {
+    KINT_NONE = 0,
+    KINT_OVERFLOW = 1,
+    KINT_SHIFT = 2,
+  };
+
   SmallPtrSet<CallInst *, 32> reports;
 
-  void doCheck(CallInst *, ArrayRef<std::pair<const BasicBlock *, const BasicBlock *>>);
+  void doCheck(CallInst *, ArrayRef<std::pair<const BasicBlock *, const BasicBlock *>>, KINT_TYPE);
 
-  static bool isBoundCheckFunc(const Function *);
+  static KINT_TYPE matchKintFunc(const Function *);
   static void printReport(const CallInst *);
 };
 
@@ -40,8 +46,14 @@ static RegisterPass<SMTQuery> X("kint-smt-query",
           false /* does not modify the CFG */,
           false /* transformation, not just analysis */);
 
-bool SMTQuery::isBoundCheckFunc(const Function *F) {
-  return static_cast<std::string>(F->getName()).compare(0, 11, "kint_bug_on") == 0;
+SMTQuery::KINT_TYPE SMTQuery::matchKintFunc(const Function *F) {
+  auto name = static_cast<std::string>(F->getName());
+  if (name.compare(0, 15, "__kint_overflow") == 0)
+    return KINT_OVERFLOW;
+  else if (name.compare(0, 12, "__kint_shift") == 0)
+    return KINT_SHIFT;
+  else
+    return KINT_NONE;
 }
 
 void SMTQuery::printReport(const CallInst *CI) {
@@ -65,9 +77,14 @@ bool SMTQuery::runOnFunction(Function &F) {
   for (auto &BB: F) {
     for (auto &I: BB) {
       auto *CI = dyn_cast<CallInst>(&I);
-      if (!CI || !isBoundCheckFunc(CI->getCalledFunction()))
+      if (!CI)
         continue;
-      doCheck(CI, backEdges);
+
+      auto type = matchKintFunc(CI->getCalledFunction());
+      if (!type)
+        continue;
+
+      doCheck(CI, backEdges, type);
     }
   }
 
@@ -77,18 +94,31 @@ bool SMTQuery::runOnFunction(Function &F) {
   return false;
 }
 
-void SMTQuery::doCheck(CallInst *CI, ArrayRef<std::pair<const BasicBlock *, const BasicBlock *>> backEdges) {
+void SMTQuery::doCheck(CallInst *CI,
+  ArrayRef<std::pair<const BasicBlock *, const BasicBlock *>> backEdges, KINT_TYPE type) {
   auto &DL = CI->getModule()->getDataLayout();
   SMTSolver solver;
   ValueConstraint ValCon(solver, DL);
   PathConstraint PathCon(ValCon, backEdges);
 
+  SMTExpr valExpr;
+
+  switch (type) {
+  case KINT_OVERFLOW:
+    valExpr = ValCon.calcOverflowConstraint(CI);
+    break;
+  case KINT_SHIFT:
+    valExpr = ValCon.calcShiftConstraint(CI);
+    break;
+  default:
+    llvm_unreachable("unknown kint function type");
+  }
+
   auto pcExpr = PathCon.calcConstraint(CI->getParent());
-  auto valExpr = ValCon.calcBoundCheckConstraint(CI);
   auto expr = solver.smt_and(pcExpr, valExpr);
   solver.smt_release(pcExpr);
   solver.smt_release(valExpr);
-  if (solver.smt_query(expr)) {
+
+  if (solver.smt_query(expr))
     reports.insert(CI);
-  }
 }

@@ -56,8 +56,9 @@ struct CheckInsertion : public FunctionPass {
 
 private:
   // Add fields and helper functions for this pass here.
-  void insertCheck(BinaryOperator *);
-  bool isObservable(Instruction *);
+  void insertOverflowCheck(BinaryOperator *);
+  void insertShiftCheck(BinaryOperator *);
+  static bool isObservable(Instruction *);
 };
 
 } // End anonymous namespace
@@ -93,7 +94,14 @@ bool CheckInsertion::runOnFunction(Function &F) {
         fallthrough;
       case Instruction::Mul:
         Changed = true;
-        insertCheck(BO);
+        insertOverflowCheck(BO);
+        break;
+      case Instruction::Shl:
+        fallthrough;
+      case Instruction::LShr:
+        fallthrough;
+      case Instruction::AShr:
+        insertShiftCheck(BO);
         break;
       default:
         break;
@@ -104,8 +112,8 @@ bool CheckInsertion::runOnFunction(Function &F) {
   return Changed;
 }
 
-void CheckInsertion::insertCheck(BinaryOperator *BO) {
-  auto *M = BO->getParent()->getParent()->getParent();
+void CheckInsertion::insertOverflowCheck(BinaryOperator *BO) {
+  auto *M = BO->getModule();
   auto &C = M->getContext();
 
   auto *Op1 = BO->getOperand(0);
@@ -116,13 +124,33 @@ void CheckInsertion::insertCheck(BinaryOperator *BO) {
 
   std::stringstream ss;
   ss << BO;
-  auto F = M->getOrInsertFunction("kint_bug_on" + ss.str(), FnTy);
+  auto F = M->getOrInsertFunction("__kint_overflow" + ss.str(), FnTy);
 
   auto *BOp = Constant::getIntegerValue(Type::getInt8Ty(C), APInt(8, BO->getOpcode()));
   auto *nsw = Constant::getIntegerValue(Type::getInt1Ty(C), APInt(1, BO->hasNoSignedWrap()));
 
   Value *Args[4] = { BOp, Op1, Op2, nsw };
   CallInst::Create(F, Args, "", BO);
+
+  NumInserted += 1;
+}
+
+void CheckInsertion::insertShiftCheck(BinaryOperator *BO) {
+  auto *M = BO->getModule();
+  auto &C = M->getContext();
+
+  auto amount = BO->getOperand(1);
+  auto width = cast<IntegerType>(BO->getOperand(0)->getType())->getBitWidth();
+  auto limit = Constant::getIntegerValue(amount->getType(), APInt(32, width));
+  auto result = CmpInst::Create(Instruction::ICmp, CmpInst::ICMP_UGE, amount, limit, "", BO);
+
+  Type *ArgTys[1] = { Type::getInt1Ty(C) };
+  auto *FnTy = FunctionType::get(Type::getVoidTy(C), ArgTys, false);
+  auto F = M->getOrInsertFunction("__kint_shift", FnTy);
+  Value *Args[1] = { result };
+  CallInst::Create(F, Args, "", BO);
+
+  NumInserted += 1;
 }
 
 bool CheckInsertion::isObservable(Instruction *I) {

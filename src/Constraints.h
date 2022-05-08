@@ -45,7 +45,8 @@ public:
   ValueConstraint &operator=(ValueConstraint &&) = delete;
 
   SMTExpr calcConstraint(llvm::Value *);
-  SMTExpr calcBoundCheckConstraint(llvm::CallInst *);
+  SMTExpr calcOverflowConstraint(llvm::CallInst *);
+  SMTExpr calcShiftConstraint(llvm::CallInst *);
 
   friend class PathConstraint;
 };
