@@ -14,7 +14,6 @@
 class ValueConstraint {
   SMTSolver &solver;
   const llvm::DataLayout &DL;
-  llvm::DenseMap<llvm::Value *, SMTExpr> valueToExpr;
 
   SMTExpr calcInstConstraint(llvm::Instruction *);
   SMTExpr calcConstConstraint(llvm::Constant *);
@@ -35,6 +34,8 @@ class ValueConstraint {
   static bool isAnalyzable(const llvm::Type *);
 
 public:
+  llvm::DenseMap<llvm::Value *, SMTExpr> valueToExpr;
+
   ValueConstraint(SMTSolver &solver, const llvm::DataLayout &DL) : solver(solver), DL(DL) {}
   ~ValueConstraint() = default;
 
@@ -54,13 +55,14 @@ public:
 class PathConstraint {
   ValueConstraint &ValCon;
   SMTSolver &solver;
-  llvm::DenseMap<llvm::BasicBlock *, SMTExpr> BBToExpr;
   const std::set<std::pair<const llvm::BasicBlock *, const llvm::BasicBlock *>> backEdgesSet;
 
   SMTExpr calcAssignConstraint(llvm::BasicBlock *BB, llvm::BasicBlock *Pred);
   SMTExpr calcBrConstraint(llvm::Instruction *I, llvm::BasicBlock *BB);
 
 public:
+  llvm::DenseMap<llvm::BasicBlock *, SMTExpr> BBToExpr;
+
   PathConstraint(ValueConstraint &VC,
     llvm::ArrayRef<std::pair<const llvm::BasicBlock *, const llvm::BasicBlock *>> BE) :
     ValCon(VC), solver(VC.solver), backEdgesSet(BE.begin(), BE.end()) {}

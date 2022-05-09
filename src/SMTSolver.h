@@ -271,6 +271,14 @@ public:
   {
     boolector_print_model(btor, fmt, stderr);
   }
+
+  llvm::APInt smt_assignment(SMTExpr e)
+  {
+    auto s = boolector_bv_assignment(btor, e);
+    std::string sval = s;
+    boolector_free_bv_assignment(btor, s);
+    return llvm::APInt(smt_get_width(e), sval.c_str(), 2);
+  }
 };
 
 #endif /* SMTSOLVER_H */

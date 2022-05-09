@@ -3,7 +3,7 @@ INCLUDE_DIRECTORIES(${CMAKE_CURRENT_SOURCE_DIR}/../boolector/src)
 add_library(KINT MODULE
     # List your source files here.
     CheckInsertion.cpp
-    CompilerAttribute.h
+    CompilerAttributes.h
     Constraints.cpp
     Constraints.h
     SMTQuery.cpp
@@ -16,7 +16,7 @@ target_compile_features(KINT PUBLIC cxx_std_14)
 # LLVM is (typically) built with no C++ RTTI. We need to match that;
 # otherwise, we'll get linker errors about missing RTTI data.
 set_target_properties(KINT PROPERTIES
-    COMPILE_FLAGS "-Wall -Wimplicit-fallthrough -fno-rtti -fPIC"
+    COMPILE_FLAGS "-Wall -Wimplicit-fallthrough -fno-rtti -fPIC -g"
 )
 
 target_link_libraries(KINT ${CMAKE_CURRENT_SOURCE_DIR}/../boolector/build/lib/libboolector.a)

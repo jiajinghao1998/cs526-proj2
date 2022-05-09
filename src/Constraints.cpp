@@ -74,6 +74,9 @@ SMTExpr PathConstraint::calcAssignConstraint(BasicBlock *BB, BasicBlock *Pred) {
 
 SMTExpr PathConstraint::calcBrConstraint(Instruction *I, BasicBlock *BB) {
   if (auto *BI = dyn_cast<BranchInst>(I)) {
+    if (BI->isUnconditional())
+      return solver.smt_true();
+
     auto expr = ValCon.calcConstraint(BI->getCondition());
 
     // Check BB path

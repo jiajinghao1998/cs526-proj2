@@ -35,7 +35,7 @@ private:
   void doCheck(CallInst *, ArrayRef<std::pair<const BasicBlock *, const BasicBlock *>>, KINT_TYPE);
 
   static KINT_TYPE matchKintFunc(const Function *);
-  static void printReport(const CallInst *);
+  static void printReport(const CallInst *, const ValueConstraint &);
 };
 
 } // End anonymous namespace
@@ -57,7 +57,7 @@ SMTQuery::KINT_TYPE SMTQuery::matchKintFunc(const Function *F) {
     return KINT_NONE;
 }
 
-void SMTQuery::printReport(const CallInst *CI) {
+void SMTQuery::printReport(const CallInst *CI, const ValueConstraint &valCon) {
   auto *I = CI->getNextNode();
 
   errs() << "Possible Integer error: " << I->getModule()->getName() << "::"
@@ -68,6 +68,15 @@ void SMTQuery::printReport(const CallInst *CI) {
     errs() << "::" << BBName;
 
   errs() << ": " << *I << '\n';
+
+  for (auto it: ValCon.valueToExpr) {
+    it.first->printAsOperand(errs(), true);
+    errs() << ": ";
+    auto val = solver.smt_assignment(it.second);
+    SmallString<18> s;
+    val.toString(s, 16, false);
+    errs() << s << '\n';
+  }
 }
 
 bool SMTQuery::runOnFunction(Function &F) {
