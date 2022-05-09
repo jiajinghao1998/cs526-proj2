@@ -33,7 +33,7 @@
 #include <llvm/Support/Debug.h>
 #include <cstdint>
 #include <sstream>
-#include "CompilerAttribute.h"
+#include "CompilerAttributes.h"
 
 using namespace llvm;
 
@@ -58,6 +58,7 @@ private:
   // Add fields and helper functions for this pass here.
   void insertOverflowCheck(BinaryOperator *);
   void insertShiftCheck(BinaryOperator *);
+  void insertDivCheck(BinaryOperator *);
   static bool isObservable(Instruction *);
 };
 
@@ -88,6 +89,9 @@ bool CheckInsertion::runOnFunction(Function &F) {
         continue;
 
       switch (BO->getOpcode()) {
+      default:
+        continue;
+
       case Instruction::Add:
         fallthrough;
       case Instruction::Sub:
@@ -96,6 +100,7 @@ bool CheckInsertion::runOnFunction(Function &F) {
         Changed = true;
         insertOverflowCheck(BO);
         break;
+
       case Instruction::Shl:
         fallthrough;
       case Instruction::LShr:
@@ -103,7 +108,11 @@ bool CheckInsertion::runOnFunction(Function &F) {
       case Instruction::AShr:
         insertShiftCheck(BO);
         break;
-      default:
+
+      case Instruction::SDiv:
+        fallthrough;
+      case Instruction::UDiv:
+        insertDivCheck(BO);
         break;
       }
     }
@@ -141,13 +150,46 @@ void CheckInsertion::insertShiftCheck(BinaryOperator *BO) {
 
   auto amount = BO->getOperand(1);
   auto width = cast<IntegerType>(BO->getOperand(0)->getType())->getBitWidth();
-  auto limit = Constant::getIntegerValue(amount->getType(), APInt(32, width));
+  auto amountWidth = cast<IntegerType>(amount->getType())->getBitWidth();
+  auto limit = Constant::getIntegerValue(amount->getType(), APInt(amountWidth, width));
   auto result = CmpInst::Create(Instruction::ICmp, CmpInst::ICMP_UGE, amount, limit, "", BO);
 
   Type *ArgTys[1] = { Type::getInt1Ty(C) };
   auto *FnTy = FunctionType::get(Type::getVoidTy(C), ArgTys, false);
-  auto F = M->getOrInsertFunction("__kint_shift", FnTy);
+  auto F = M->getOrInsertFunction("__kint_shift_div", FnTy);
   Value *Args[1] = { result };
+  CallInst::Create(F, Args, "", BO);
+
+  NumInserted += 1;
+}
+
+void CheckInsertion::insertDivCheck(BinaryOperator *BO) {
+  auto *M = BO->getModule();
+  auto &C = M->getContext();
+
+  auto divisor = BO->getOperand(1);
+  auto divisorWidth = cast<IntegerType>(divisor->getType())->getBitWidth();
+  auto zero = Constant::getIntegerValue(divisor->getType(), APInt::getNullValue(divisorWidth));
+  Value *isErr = CmpInst::Create(Instruction::ICmp, CmpInst::ICMP_EQ, divisor, zero, "", BO);
+
+  if (BO->getOpcode() == Instruction::SDiv) {
+    auto negOne = Constant::getIntegerValue(divisor->getType(), APInt::getAllOnesValue(divisorWidth));
+
+    auto dividend = BO->getOperand(0);
+    auto dividendWidth = cast<IntegerType>(dividend->getType())->getBitWidth();
+    auto min = Constant::getIntegerValue(dividend->getType(), APInt::getSignedMinValue(dividendWidth));
+
+    auto isNegOne = CmpInst::Create(Instruction::ICmp, CmpInst::ICMP_EQ, divisor, negOne, "", BO);
+    auto isMin = CmpInst::Create(Instruction::ICmp, CmpInst::ICMP_EQ, dividend, min, "", BO);
+
+    auto isSignedErr = BinaryOperator::Create(Instruction::And, isNegOne, isMin, "", BO);
+    isErr = BinaryOperator::Create(Instruction::Or, isErr, isSignedErr, "", BO);
+  }
+
+  Type *ArgTys[1] = { Type::getInt1Ty(C) };
+  auto *FnTy = FunctionType::get(Type::getVoidTy(C), ArgTys, false);
+  auto F = M->getOrInsertFunction("__kint_shift_div", FnTy);
+  Value *Args[1] = { isErr };
   CallInst::Create(F, Args, "", BO);
 
   NumInserted += 1;
@@ -163,7 +205,7 @@ bool CheckInsertion::isObservable(Instruction *I) {
     insts.pop_back();
     visited.insert(curr);
 
-    if (isSafeToSpeculativelyExecute(curr))
+    if (!isSafeToSpeculativelyExecute(curr))
       return true;
 
     for (auto *U: curr->users()) {

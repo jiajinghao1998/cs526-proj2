@@ -126,3 +126,38 @@ int ashr_no_error(void)
   int i2 = 31;
   return i1 >> i2;
 }
+
+unsigned udiv_error(void)
+{
+  unsigned int i1 = 2;
+  unsigned int i2 = 0;
+  return i1 / i2;
+}
+
+unsigned udiv_no_error(void)
+{
+  unsigned int i1 = 2;
+  unsigned int i2 = 1;
+  return i1 / i2;
+}
+
+int sdiv_error1(void)
+{
+  int i1 = 2;
+  int i2 = 0;
+  return i1 / i2;
+}
+
+int sdiv_error2(void)
+{
+  int i1 = 0x80000000;
+  int i2 = -1;
+  return i1 / i2;
+}
+
+int sdiv_no_error(void)
+{
+  int i1 = 0x80000001;
+  int i2 = -1;
+  return i1 / i2;
+}

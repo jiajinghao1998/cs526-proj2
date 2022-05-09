@@ -488,7 +488,7 @@ SMTExpr ValueConstraint::calcOverflowConstraint(CallInst *CI) {
   return expr;
 }
 
-SMTExpr ValueConstraint::calcShiftConstraint(CallInst *CI) {
+SMTExpr ValueConstraint::calcShiftDivConstraint(CallInst *CI) {
   return calcConstraint(CI->getArgOperand(0));
 }
 

@@ -1,3 +1,4 @@
+#define DEBUG_TYPE "kint"
 #include <llvm/Analysis/CFG.h>
 #include <llvm/IR/Instructions.h>
 #include <llvm/IR/Module.h>
@@ -26,7 +27,7 @@ private:
   enum KINT_TYPE : unsigned {
     KINT_NONE = 0,
     KINT_OVERFLOW = 1,
-    KINT_SHIFT = 2,
+    KINT_SHIFT_DIV = 2,
   };
 
   SmallPtrSet<CallInst *, 32> reports;
@@ -50,8 +51,8 @@ SMTQuery::KINT_TYPE SMTQuery::matchKintFunc(const Function *F) {
   auto name = static_cast<std::string>(F->getName());
   if (name.compare(0, 15, "__kint_overflow") == 0)
     return KINT_OVERFLOW;
-  else if (name.compare(0, 12, "__kint_shift") == 0)
-    return KINT_SHIFT;
+  else if (name.compare(0, 16, "__kint_shift_div") == 0)
+    return KINT_SHIFT_DIV;
   else
     return KINT_NONE;
 }
@@ -107,8 +108,8 @@ void SMTQuery::doCheck(CallInst *CI,
   case KINT_OVERFLOW:
     valExpr = ValCon.calcOverflowConstraint(CI);
     break;
-  case KINT_SHIFT:
-    valExpr = ValCon.calcShiftConstraint(CI);
+  case KINT_SHIFT_DIV:
+    valExpr = ValCon.calcShiftDivConstraint(CI);
     break;
   default:
     llvm_unreachable("unknown kint function type");

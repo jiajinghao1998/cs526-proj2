@@ -46,7 +46,7 @@ public:
 
   SMTExpr calcConstraint(llvm::Value *);
   SMTExpr calcOverflowConstraint(llvm::CallInst *);
-  SMTExpr calcShiftConstraint(llvm::CallInst *);
+  SMTExpr calcShiftDivConstraint(llvm::CallInst *);
 
   friend class PathConstraint;
 };
