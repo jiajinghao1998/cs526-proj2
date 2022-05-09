@@ -29,7 +29,7 @@ PASSES = -verify -mem2reg
 
 test_single_op: test_single_op.c
 	$(LLVMGCC) -Xclang -disable-O0-optnone -S -emit-llvm -o - $< | \
-	$(LLVMOPT) -load $(SROALIB) $(PASSES) -kint-check-insertion -verify -kint-smt-query -enable-new-pm=0 -o=/dev/null
+	$(LLVMOPT) -load $(SROALIB) $(PASSES) -kint-check-insertion -verify -print-module -kint-smt-query -enable-new-pm=0 -o=/dev/null
 
 test_path: test_path.c
 	$(LLVMGCC) -Xclang -disable-O0-optnone -S -emit-llvm -o - $< | \
